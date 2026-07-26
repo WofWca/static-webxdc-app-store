@@ -43,7 +43,7 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const topic = () => decodeURIComponent(location.hash.slice(1)) || 'webxdc';
+const topic = () => decodeURIComponent(location.hash.slice(1)) || 'webxdc-app,webxdc';
 
 $('f').onsubmit = e => { e.preventDefault(); location.hash = $('q').value.trim(); };
 onhashchange = load;
