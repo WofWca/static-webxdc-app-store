@@ -68,6 +68,7 @@ const SOURCES = {
       desc: r.description,
       stars: r.stargazers_count,
       updated: r.pushed_at,
+      topics: r.topics || [],
       icon: `https://raw.githubusercontent.com/${r.full_name}/HEAD/icon.png`,
       avatar: `${r.owner.avatar_url}&s=80`,
     }));
@@ -82,11 +83,23 @@ const SOURCES = {
       desc: r.description,
       stars: r.stars_count,
       updated: r.updated_at,
+      topics: r.topics || [],
       icon: `${r.html_url}/raw/branch/${r.default_branch}/icon.png`,
       avatar: r.owner.avatar_url,
     }));
   },
 };
+
+/**
+ * If a repo doesn't have the `webxdc-app` topic, put it after all others.
+ *
+ * If a repo doesn't have the `webxdc-app` topic but, say, only has `webxdc`,
+ * then it might be a WebXDC development tool or something related to that.
+ */
+function rankRepos(repos) {
+  const isApp = r => r.topics.includes('webxdc-app');
+  return repos.sort((a, b) => isApp(b) - isApp(a) || b.stars - a.stars);
+}
 
 function card(r) {
   const li = document.createElement('li');
@@ -131,8 +144,7 @@ async function load() {
   try {
     const names = Object.keys(SOURCES);
     const results = await Promise.allSettled(names.map(n => SOURCES[n](t)));
-    const repos = results.flatMap(r => r.value || []);
-    repos.sort((a, b) => b.stars - a.stars);
+    const repos = rankRepos(results.flatMap(r => r.value || []));
     // One dead forge still shows the other's results.
     const counts = results.map((r, i) =>
       `${names[i]}: ${r.status === 'fulfilled' ? r.value.length : `failed (${r.reason.message})`}`);
