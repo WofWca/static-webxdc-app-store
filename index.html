@@ -191,7 +191,7 @@ function card(r) {
   time.textContent = r.updated.slice(0, 10);
   const rel = meta.appendChild(document.createElement('a'));
   rel.href = r.url + '/releases/latest';
-  rel.textContent = 'latest release';
+  rel.textContent = 'Download';
   // Look up the .xdc file only when clicked,
   // so as to not burn the API rate limit.
   // Ctrl/cmd-click keeps its usual meaning, and the
@@ -202,7 +202,7 @@ function card(r) {
     e.preventDefault();
     rel.textContent = 'finding .xdc…';
     const xdc = await xdcFileUrl(r).catch(() => null);
-    rel.textContent = 'latest release';
+    rel.textContent = 'Download';
     if (xdc) {
       rel.href = xdc; // a second click needs no lookup
       rel.onclick = null;
