@@ -5,8 +5,8 @@ import { readFile } from 'node:fs/promises';
 const page = await readFile(new URL('index.html', import.meta.url), 'utf8');
 const script = page.match(/<script>([\s\S]*)<\/script>/)[1];
 const adapters = script.slice(script.indexOf('async function json'), script.indexOf('function card('));
-const { SOURCES, rankRepos } = await import('data:text/javascript,' +
-  encodeURIComponent(adapters + 'export { SOURCES, rankRepos };'));
+const { SOURCES, rankRepos, pages } = await import('data:text/javascript,' +
+  encodeURIComponent(adapters + 'export { SOURCES, rankRepos, pages };'));
 
 let failed = 0;
 const ok = (cond, msg) => { if (!cond) { failed++; console.error('FAIL:', msg); } };
@@ -21,6 +21,52 @@ const ranked = rankRepos([
 ]);
 ok(ranked.map(r => r.name).join() === 'more-stars-app,few-stars-app,many-stars-plain,no-topics',
   'wrong ranking: ' + ranked.map(r => r.name).join());
+
+// Both forges currently fit one page, so force a page boundary with a tiny limit and
+// check the walk lands on the same set a single big page returns. Codeberg only: it
+// has no per-minute search quota to burn.
+const cb = 'https://codeberg.org/api/v1/repos/search?topic=true&q=webxdc&limit=';
+const [walked, oneShot] = await Promise.all([
+  pages(cb + 5, 5, d => d.data),
+  pages(cb + 50, 50, d => d.data),
+]);
+ok(oneShot.length > 5, `need >5 repos to cross a page boundary, got ${oneShot.length}`);
+ok(walked.length === oneShot.length, `paged walk got ${walked.length}, single page ${oneShot.length}`);
+ok(new Set(walked.map(r => r.full_name)).size === walked.length, 'paged walk returned duplicates');
+
+// Rate limits are the one failure that must not lose data: two pages land, the third
+// is refused, and the repos already in hand have to survive it. Stubbed fetch, so this
+// costs no quota and doesn't depend on actually being throttled.
+const realFetch = globalThis.fetch;
+let asked = [];
+globalThis.fetch = async url => {
+  asked.push(url);
+  return asked.length <= 2
+    ? { ok: true, status: 200, json: async () => ({ items: [{ id: 1 }, { id: 2 }] }) }
+    : { ok: false, status: 403, json: async () => ({ message: 'API rate limit exceeded' }) };
+};
+
+const partial = await pages('https://forge.test/search?q=x', 2, d => d.items).catch(e => e);
+ok(Array.isArray(partial), `threw the fetched pages away instead of keeping them: ${partial.message}`);
+ok(partial.length === 4, `dropped already-fetched repos: kept ${partial.length} of 4`);
+ok(partial.error?.message === 'API rate limit exceeded', `no rate-limit reason: ${partial.error}`);
+ok(asked.length === 3, `stopped late or retried: ${asked.length} requests`);
+ok(asked.every((u, i) => u.endsWith(`&page=${i + 1}`)), `walked odd pages: ${asked}`);
+
+// With nothing fetched there is nothing to show, so that still throws. The body is
+// HTML here, as a throttled forge often answers, which must not surface as a JSON
+// parse error.
+asked = [];
+globalThis.fetch = async url => {
+  asked.push(url);
+  return { ok: false, status: 429, json: async () => { throw new SyntaxError('Unexpected token <'); } };
+};
+const failure = await pages('https://forge.test/search?q=x', 2, d => d.items).catch(e => e);
+ok(failure instanceof Error, 'a first page that fails should reject');
+ok(failure.message === 'HTTP 429', `leaked a parse error instead of the status: ${failure.message}`);
+ok(asked.length === 1, `retried a refused first page: ${asked.length} requests`);
+
+globalThis.fetch = realFetch;
 
 const names = Object.keys(SOURCES);
 const results = await Promise.allSettled(names.map(n => SOURCES[n]('webxdc-app,webxdc')));

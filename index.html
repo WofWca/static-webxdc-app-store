@@ -50,43 +50,74 @@ onhashchange = load;
 
 async function json(url, headers) {
   const res = await fetch(url, { headers });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.message || res.status);
+  // A rate-limited or overloaded forge may answer with HTML instead of JSON.
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
   return data;
+}
+
+// GitHub's search API errors out rather than paging past 1000 results, so this is
+// a real ceiling, not just a runaway guard.
+const MAX_RESULTS = 1000;
+
+// TODO fix: proper pagination, that can retry later if rate-limited.
+// And don't try to load all pages right away.
+/**
+ * Collect every page, stopping at the first short one. Both forges cap the page
+ * size server-side and take a 1-based `page`. While a topic fits on one page this
+ * costs no extra request, so it is free until it isn't.
+ */
+async function pages(url, size, parse, headers) {
+  const out = [];
+  try {
+    for (let page = 1; out.length < MAX_RESULTS; page++) {
+      const items = parse(await json(`${url}&page=${page}`, headers));
+      out.push(...items);
+      if (items.length < size) break;
+    }
+  } catch (e) {
+    if (!out.length) throw e;
+    out.error = e;
+  }
+  return out;
 }
 
 // Each source returns repos in one shape. Icons/avatars come from the plain web
 // hosts, not the API hosts, so they cost no API rate limit.
 const SOURCES = {
-  GitHub: async t => {
-    const d = await json('https://api.github.com/search/repositories?sort=stars&order=desc&per_page=100&q='
-      + encodeURIComponent(`topic:${t}`), { Accept: 'application/vnd.github+json' });
-    return d.items.map(r => ({
-      host: 'GitHub',
-      name: r.full_name,
-      url: r.html_url,
-      desc: r.description,
-      stars: r.stargazers_count,
-      updated: r.pushed_at,
-      topics: r.topics || [],
-      icon: `https://raw.githubusercontent.com/${r.full_name}/HEAD/icon.png`,
-      avatar: `${r.owner.avatar_url}&s=80`,
-    }));
+  GitHub: t => {
+    const size = 100; // search API maximum
+    return pages(
+      `https://api.github.com/search/repositories?sort=stars&order=desc&per_page=${size}&q=`
+        + encodeURIComponent(`topic:${t}`),
+      size, d => d.items.map(r => ({
+        host: 'GitHub',
+        name: r.full_name,
+        url: r.html_url,
+        desc: r.description,
+        stars: r.stargazers_count,
+        updated: r.pushed_at,
+        topics: r.topics || [],
+        icon: `https://raw.githubusercontent.com/${r.full_name}/HEAD/icon.png`,
+        avatar: `${r.owner.avatar_url}&s=80`,
+      })), { Accept: 'application/vnd.github+json' });
   },
-  Codeberg: async t => {
-    const d = await json('https://codeberg.org/api/v1/repos/search?sort=stars&order=desc&limit=50&topic=true&q='
-      + encodeURIComponent(t));
-    return d.data.map(r => ({
-      host: 'Codeberg',
-      name: r.full_name,
-      url: r.html_url,
-      desc: r.description,
-      stars: r.stars_count,
-      updated: r.updated_at,
-      topics: r.topics || [],
-      icon: `${r.html_url}/raw/branch/${r.default_branch}/icon.png`,
-      avatar: r.owner.avatar_url,
-    }));
+  Codeberg: t => {
+    const size = 50; // Forgejo's default MAX_RESPONSE_ITEMS
+    return pages(
+      `https://codeberg.org/api/v1/repos/search?sort=stars&order=desc&limit=${size}&topic=true&q=`
+        + encodeURIComponent(t),
+      size, d => d.data.map(r => ({
+        host: 'Codeberg',
+        name: r.full_name,
+        url: r.html_url,
+        desc: r.description,
+        stars: r.stars_count,
+        updated: r.updated_at,
+        topics: r.topics || [],
+        icon: `${r.html_url}/raw/branch/${r.default_branch}/icon.png`,
+        avatar: r.owner.avatar_url,
+      })));
   },
 };
 
@@ -145,9 +176,11 @@ async function load() {
     const names = Object.keys(SOURCES);
     const results = await Promise.allSettled(names.map(n => SOURCES[n](t)));
     const repos = rankRepos(results.flatMap(r => r.value || []));
-    // One dead forge still shows the other's results.
-    const counts = results.map((r, i) =>
-      `${names[i]}: ${r.status === 'fulfilled' ? r.value.length : `failed (${r.reason.message})`}`);
+    // One dead forge still shows the other's results, and a forge that rate-limited
+    // part-way still shows the pages it did give us.
+    const counts = results.map((r, i) => r.status === 'rejected'
+      ? `${names[i]}: failed (${r.reason.message})`
+      : `${names[i]}: ${r.value.length}${r.value.error ? ` so far (${r.value.error.message})` : ''}`);
     $('status').textContent = `${repos.length} repos tagged "${t}" — ${counts.join(', ')}`;
     $('list').append(...repos.map(card));
   } catch (e) {
