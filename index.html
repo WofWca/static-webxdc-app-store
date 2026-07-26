@@ -50,7 +50,8 @@ function card(r) {
 
   const meta = li.appendChild(document.createElement('div'));
   meta.className = 'meta';
-  meta.append(`★ ${r.stargazers_count}`, `updated ${r.pushed_at.slice(0, 10)}`);
+  for (const text of [`★ ${r.stargazers_count}`, `updated ${r.pushed_at.slice(0, 10)}`])
+    meta.appendChild(document.createElement('span')).textContent = text;
   const rel = meta.appendChild(document.createElement('a'));
   rel.href = r.html_url + '/releases/latest';
   rel.textContent = 'latest release';
