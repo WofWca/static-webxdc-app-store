@@ -13,7 +13,10 @@
        grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); }
   li { border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
        border-radius: .5rem; padding: .75rem; display: flex; flex-direction: column; gap: .4rem; }
-  .name { font-weight: 600; }
+  .name { font-weight: 600; display: flex; gap: .5rem; align-items: center;
+       text-decoration: none; overflow-wrap: anywhere; }
+  .name img { width: 2.5rem; height: 2.5rem; border-radius: .3rem; flex: none;
+       background: color-mix(in srgb, currentColor 15%, transparent); }
   .desc { flex: 1; }
   .meta { font-size: .85rem; opacity: .7; display: flex; gap: .75rem; flex-wrap: wrap; }
   a { color: inherit; }
@@ -43,7 +46,16 @@ function card(r) {
   const a = li.appendChild(document.createElement('a'));
   a.className = 'name';
   a.href = r.html_url;
-  a.textContent = r.full_name;
+
+  // Both CDNs are outside api.github.com, so images cost no API rate limit.
+  const img = a.appendChild(document.createElement('img'));
+  const avatar = `${r.owner.avatar_url}&s=80`;
+  img.loading = 'lazy';
+  img.alt = '';
+  img.src = `https://raw.githubusercontent.com/${r.full_name}/HEAD/icon.png`;
+  img.onerror = () => { img.onerror = null; img.src = avatar; };
+
+  a.appendChild(document.createElement('span')).textContent = r.full_name;
 
   li.appendChild(document.createElement('div')).textContent = r.description || '';
   li.lastChild.className = 'desc';
