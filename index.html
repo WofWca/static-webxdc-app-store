@@ -175,7 +175,11 @@ async function load() {
   try {
     const names = Object.keys(SOURCES);
     const results = await Promise.allSettled(names.map(n => SOURCES[n](t)));
-    const repos = rankRepos(results.flatMap(r => r.value || []));
+    const repos = rankRepos(
+      results
+        .flatMap(r => r.value || [])
+        .filter(r => !r.topics.includes('webxdc-app-hidden-from-stores'))
+    );
     // One dead forge still shows the other's results, and a forge that rate-limited
     // part-way still shows the pages it did give us.
     const counts = results.map((r, i) => r.status === 'rejected'
