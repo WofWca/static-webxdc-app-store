@@ -40,32 +40,70 @@ const topic = () => decodeURIComponent(location.hash.slice(1)) || 'webxdc';
 $('f').onsubmit = e => { e.preventDefault(); location.hash = $('q').value.trim(); };
 onhashchange = load;
 
+async function json(url, headers) {
+  const res = await fetch(url, { headers });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || res.status);
+  return data;
+}
+
+// Each source returns repos in one shape. Icons/avatars come from the plain web
+// hosts, not the API hosts, so they cost no API rate limit.
+const SOURCES = {
+  GitHub: async t => {
+    const d = await json('https://api.github.com/search/repositories?per_page=100&q='
+      + encodeURIComponent(`topic:${t}`), { Accept: 'application/vnd.github+json' });
+    return d.items.map(r => ({
+      host: 'GitHub',
+      name: r.full_name,
+      url: r.html_url,
+      desc: r.description,
+      stars: r.stargazers_count,
+      updated: r.pushed_at,
+      icon: `https://raw.githubusercontent.com/${r.full_name}/HEAD/icon.png`,
+      avatar: `${r.owner.avatar_url}&s=80`,
+    }));
+  },
+  Codeberg: async t => {
+    const d = await json('https://codeberg.org/api/v1/repos/search?limit=50&topic=true&q='
+      + encodeURIComponent(t));
+    return d.data.map(r => ({
+      host: 'Codeberg',
+      name: r.full_name,
+      url: r.html_url,
+      desc: r.description,
+      stars: r.stars_count,
+      updated: r.updated_at,
+      icon: `${r.html_url}/raw/branch/${r.default_branch}/icon.png`,
+      avatar: r.owner.avatar_url,
+    }));
+  },
+};
+
 function card(r) {
   const li = document.createElement('li');
 
   const a = li.appendChild(document.createElement('a'));
   a.className = 'name';
-  a.href = r.html_url;
+  a.href = r.url;
 
-  // Both CDNs are outside api.github.com, so images cost no API rate limit.
   const img = a.appendChild(document.createElement('img'));
-  const avatar = `${r.owner.avatar_url}&s=80`;
   img.loading = 'lazy';
   img.alt = '';
-  img.src = `https://raw.githubusercontent.com/${r.full_name}/HEAD/icon.png`;
-  img.onerror = () => { img.onerror = null; img.src = avatar; };
+  img.src = r.icon;
+  img.onerror = () => { img.onerror = null; img.src = r.avatar; };
 
-  a.appendChild(document.createElement('span')).textContent = r.full_name;
+  a.appendChild(document.createElement('span')).textContent = r.name;
 
-  li.appendChild(document.createElement('div')).textContent = r.description || '';
+  li.appendChild(document.createElement('div')).textContent = r.desc || '';
   li.lastChild.className = 'desc';
 
   const meta = li.appendChild(document.createElement('div'));
   meta.className = 'meta';
-  for (const text of [`★ ${r.stargazers_count}`, `updated ${r.pushed_at.slice(0, 10)}`])
+  for (const text of [`★ ${r.stars}`, `updated ${r.updated.slice(0, 10)}`])
     meta.appendChild(document.createElement('span')).textContent = text;
   const rel = meta.appendChild(document.createElement('a'));
-  rel.href = r.html_url + '/releases/latest';
+  rel.href = r.url + '/releases/latest';
   rel.textContent = 'latest release';
 
   return li;
@@ -78,13 +116,15 @@ async function load() {
   $('status').textContent = 'loading…';
   $('list').replaceChildren();
   try {
-    const url = 'https://api.github.com/search/repositories?per_page=100&sort=stars&q='
-      + encodeURIComponent(`topic:${t}`);
-    const res = await fetch(url, { headers: { Accept: 'application/vnd.github+json' } });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || res.status);
-    $('status').textContent = `${data.total_count} repos tagged "${t}"`;
-    $('list').append(...data.items.map(card));
+    const names = Object.keys(SOURCES);
+    const results = await Promise.allSettled(names.map(n => SOURCES[n](t)));
+    const repos = results.flatMap(r => r.value || []);
+    repos.sort((a, b) => b.stars - a.stars);
+    // One dead forge still shows the other's results.
+    const counts = results.map((r, i) =>
+      `${names[i]}: ${r.status === 'fulfilled' ? r.value.length : `failed (${r.reason.message})`}`);
+    $('status').textContent = `${repos.length} repos tagged "${t}" — ${counts.join(', ')}`;
+    $('list').append(...repos.map(card));
   } catch (e) {
     $('status').textContent = `error: ${e.message}`;
   }
