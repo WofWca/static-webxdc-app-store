@@ -59,7 +59,7 @@ async function json(url, headers) {
 // hosts, not the API hosts, so they cost no API rate limit.
 const SOURCES = {
   GitHub: async t => {
-    const d = await json('https://api.github.com/search/repositories?per_page=100&q='
+    const d = await json('https://api.github.com/search/repositories?sort=stars&order=desc&per_page=100&q='
       + encodeURIComponent(`topic:${t}`), { Accept: 'application/vnd.github+json' });
     return d.items.map(r => ({
       host: 'GitHub',
@@ -74,7 +74,7 @@ const SOURCES = {
     }));
   },
   Codeberg: async t => {
-    const d = await json('https://codeberg.org/api/v1/repos/search?limit=50&topic=true&q='
+    const d = await json('https://codeberg.org/api/v1/repos/search?sort=stars&order=desc&limit=50&topic=true&q='
       + encodeURIComponent(t));
     return d.data.map(r => ({
       host: 'Codeberg',
