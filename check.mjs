@@ -5,8 +5,8 @@ import { readFile } from 'node:fs/promises';
 const page = await readFile(new URL('index.html', import.meta.url), 'utf8');
 const script = page.match(/<script>([\s\S]*)<\/script>/)[1];
 const adapters = script.slice(script.indexOf('async function json'), script.indexOf('function card('));
-const { SOURCES, rankRepos, pages } = await import('data:text/javascript,' +
-  encodeURIComponent(adapters + 'export { SOURCES, rankRepos, pages };'));
+const { SOURCES, rankRepos, pages, firstImageThatLoads } = await import('data:text/javascript,' +
+  encodeURIComponent(adapters + 'export { SOURCES, rankRepos, pages, firstImageThatLoads };'));
 
 let failed = 0;
 const ok = (cond, msg) => { if (!cond) { failed++; console.error('FAIL:', msg); } };
@@ -21,6 +21,16 @@ const ranked = rankRepos([
 ]);
 ok(ranked.map(r => r.name).join() === 'more-stars-app,few-stars-app,many-stars-plain,no-topics',
   'wrong ranking: ' + ranked.map(r => r.name).join());
+
+// A repo may ship icon.png or icon.jpg, or neither. Walk the whole chain on a fake
+// img: every candidate gets tried in order, and the final failure must clear the
+// handler rather than retry, or a repo with no icon spins forever.
+const fake = {};
+firstImageThatLoads(fake, ['a.png', 'b.jpg', 'avatar']);
+const tried = [fake.src];
+while (fake.onerror) { fake.onerror(); tried.push(fake.src); }
+ok(tried.join() === 'a.png,b.jpg,avatar,avatar', `wrong icon fallback order: ${tried}`);
+ok(fake.onerror === null, 'icon fallback never stops, a repo with no icon would loop');
 
 // Both forges currently fit one page, so force a page boundary with a tiny limit and
 // check the walk lands on the same set a single big page returns. Codeberg only: it
@@ -79,8 +89,10 @@ for (const [i, r] of results.entries())
 ok(repos.some(r => r.topics.includes('webxdc-app') && !r.topics.includes('webxdc')),
   'comma topic list is not being treated as OR');
 for (const r of repos)
-  for (const k of ['host', 'name', 'url', 'stars', 'updated', 'icon', 'avatar', 'topics'])
+  for (const k of ['host', 'name', 'url', 'stars', 'updated', 'icons', 'avatar', 'topics'])
     ok(r[k] != null, `${r.host} ${r.name}: ${k} missing`);
+ok(repos.every(r => r.icons.length === 2 && r.icons[0].endsWith('/icon.png')
+  && r.icons[1].endsWith('/icon.jpg')), 'both spec icon formats should be offered');
 ok(new Set(repos.map(r => r.host)).size === names.length, 'a forge contributed nothing');
 ok(repos.every(r => /^\d{4}-\d{2}-\d{2}$/.test(r.updated.slice(0, 10))), 'unexpected date format');
 // r.updated goes straight into <time datetime>, so it has to be a real timestamp.

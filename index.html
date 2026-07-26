@@ -82,6 +82,20 @@ async function pages(url, size, parse, headers) {
   return out;
 }
 
+// The webxdc spec allows the icon to be either icon.png or icon.jpg.
+const iconUrls = base => [`${base}/icon.png`, `${base}/icon.jpg`];
+
+/**
+ * Show the first image that loads, walking `srcs` on each failure. The last
+ * failure clears the handler instead of retrying, so a repo with no icon at all
+ * settles rather than looping.
+ */
+function firstImageThatLoads(img, srcs) {
+  let i = 0;
+  img.onerror = () => { if (++i < srcs.length) img.src = srcs[i]; else img.onerror = null; };
+  img.src = srcs[0];
+}
+
 // Each source returns repos in one shape. Icons/avatars come from the plain web
 // hosts, not the API hosts, so they cost no API rate limit.
 const SOURCES = {
@@ -98,7 +112,7 @@ const SOURCES = {
         stars: r.stargazers_count,
         updated: r.pushed_at,
         topics: r.topics || [],
-        icon: `https://raw.githubusercontent.com/${r.full_name}/HEAD/icon.png`,
+        icons: iconUrls(`https://raw.githubusercontent.com/${r.full_name}/HEAD`),
         avatar: `${r.owner.avatar_url}&s=80`,
       })), { Accept: 'application/vnd.github+json' });
   },
@@ -115,7 +129,7 @@ const SOURCES = {
         stars: r.stars_count,
         updated: r.updated_at,
         topics: r.topics || [],
-        icon: `${r.html_url}/raw/branch/${r.default_branch}/icon.png`,
+        icons: iconUrls(`${r.html_url}/raw/branch/${r.default_branch}`),
         avatar: r.owner.avatar_url,
       })));
   },
@@ -142,8 +156,7 @@ function card(r) {
   const img = a.appendChild(document.createElement('img'));
   img.loading = 'lazy';
   img.alt = '';
-  img.src = r.icon;
-  img.onerror = () => { img.onerror = null; img.src = r.avatar; };
+  firstImageThatLoads(img, [...r.icons, r.avatar]);
 
   a.appendChild(document.createElement('span')).textContent = r.name;
 
