@@ -24,6 +24,8 @@ for (const r of repos)
 ok(repos.every((r, i) => i === 0 || repos[i - 1].stars >= r.stars), 'not sorted by stars');
 ok(new Set(repos.map(r => r.host)).size === names.length, 'a forge contributed nothing');
 ok(repos.every(r => /^\d{4}-\d{2}-\d{2}$/.test(r.updated.slice(0, 10))), 'unexpected date format');
+// r.updated goes straight into <time datetime>, so it has to be a real timestamp.
+ok(repos.every(r => !Number.isNaN(Date.parse(r.updated))), 'unparseable timestamp');
 
 console.log(results.map((r, i) => `${names[i]}: ${r.value?.length ?? 'failed'}`).join(', '),
   `| ${repos.length} total`);

@@ -110,9 +110,11 @@ function card(r) {
   meta.className = 'meta';
   meta.appendChild(document.createElement('span')).textContent = `★ ${r.stars}`;
 
-  const time = meta.appendChild(document.createElement('time'));
+  const updated = meta.appendChild(document.createElement('span'));
+  updated.append('updated ');
+  const time = updated.appendChild(document.createElement('time'));
   time.dateTime = r.updated;
-  time.textContent = `updated ${r.updated.slice(0, 10)}`;
+  time.textContent = r.updated.slice(0, 10);
   const rel = meta.appendChild(document.createElement('a'));
   rel.href = r.url + '/releases/latest';
   rel.textContent = 'latest release';
