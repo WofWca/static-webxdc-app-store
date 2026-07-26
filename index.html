@@ -30,7 +30,7 @@
     <button>search</button>
   </form>
 </header>
-<p id="status"></p>
+<p id="status" role="status"></p>
 <p>Liked an app? Star it to move it up the list!</p>
 <ul id="list"></ul>
 <p>
@@ -108,8 +108,11 @@ function card(r) {
 
   const meta = li.appendChild(document.createElement('div'));
   meta.className = 'meta';
-  for (const text of [`★ ${r.stars}`, `updated ${r.updated.slice(0, 10)}`])
-    meta.appendChild(document.createElement('span')).textContent = text;
+  meta.appendChild(document.createElement('span')).textContent = `★ ${r.stars}`;
+
+  const time = meta.appendChild(document.createElement('time'));
+  time.dateTime = r.updated;
+  time.textContent = `updated ${r.updated.slice(0, 10)}`;
   const rel = meta.appendChild(document.createElement('a'));
   rel.href = r.url + '/releases/latest';
   rel.textContent = 'latest release';
