@@ -5,11 +5,16 @@ import { readFile } from 'node:fs/promises';
 const page = await readFile(new URL('index.html', import.meta.url), 'utf8');
 const script = page.match(/<script>([\s\S]*)<\/script>/)[1];
 const adapters = script.slice(script.indexOf('async function json'), script.indexOf('function card('));
-const { SOURCES, rankRepos, pages, firstImageThatLoads } = await import('data:text/javascript,' +
-  encodeURIComponent(adapters + 'export { SOURCES, rankRepos, pages, firstImageThatLoads };'));
+const exports = 'SOURCES, rankRepos, pages, firstImageThatLoads, xdcUrl';
+const { SOURCES, rankRepos, pages, firstImageThatLoads, xdcUrl } =
+  await import('data:text/javascript,' + encodeURIComponent(`${adapters}export { ${exports} };`));
 
 let failed = 0;
 const ok = (cond, msg) => { if (!cond) { failed++; console.error('FAIL:', msg); } };
+
+// Error paths are checked against a stubbed fetch, so they cost no API quota and
+// don't need the forge to actually be throttled. Restored before each live section.
+const realFetch = globalThis.fetch;
 
 // rankRepos() is pure, so check the ordering rules directly: webxdc-app repos first,
 // stars breaking ties. 99 stars must not lift a plain repo above a 1-star app.
@@ -32,6 +37,24 @@ while (fake.onerror) { fake.onerror(); tried.push(fake.src); }
 ok(tried.join() === 'a.png,b.jpg,avatar,avatar', `wrong icon fallback order: ${tried}`);
 ok(fake.onerror === null, 'icon fallback never stops, a repo with no icon would loop');
 
+// Asset names are arbitrary in the wild, so the .xdc is found by extension and picked
+// out of whatever else a release ships. No release, or one without a .xdc, is not an
+// error the caller can't handle: it falls back to the releases page.
+globalThis.fetch = async () => ({
+  ok: true, status: 200, json: async () => ({ assets: [
+    { name: 'source.zip', browser_download_url: 'https://forge.test/source.zip' },
+    { name: 'my-game.xdc', browser_download_url: 'https://forge.test/my-game.xdc' },
+  ] }),
+});
+ok(await xdcUrl({}) === 'https://forge.test/my-game.xdc', 'did not pick the .xdc out of the assets');
+
+globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ assets: [] }) });
+ok(await xdcUrl({}) === null, 'a release with no .xdc should resolve to null, not undefined');
+
+globalThis.fetch = async () => ({ ok: false, status: 404, json: async () => ({ message: 'Not Found' }) });
+ok(await xdcUrl({}).catch(() => 'threw') === 'threw', 'a repo with no releases should reject');
+globalThis.fetch = realFetch;
+
 // Both forges currently fit one page, so force a page boundary with a tiny limit and
 // check the walk lands on the same set a single big page returns. Codeberg only: it
 // has no per-minute search quota to burn.
@@ -45,9 +68,7 @@ ok(walked.length === oneShot.length, `paged walk got ${walked.length}, single pa
 ok(new Set(walked.map(r => r.full_name)).size === walked.length, 'paged walk returned duplicates');
 
 // Rate limits are the one failure that must not lose data: two pages land, the third
-// is refused, and the repos already in hand have to survive it. Stubbed fetch, so this
-// costs no quota and doesn't depend on actually being throttled.
-const realFetch = globalThis.fetch;
+// is refused, and the repos already in hand have to survive it.
 let asked = [];
 globalThis.fetch = async url => {
   asked.push(url);
@@ -101,6 +122,16 @@ ok(repos.every(r => !Number.isNaN(Date.parse(r.updated))), 'unparseable timestam
 const lastApp = repos.findLastIndex(r => r.topics.includes('webxdc-app'));
 const firstOther = repos.findIndex(r => !r.topics.includes('webxdc-app'));
 ok(lastApp < firstOther || firstOther === -1, 'webxdc-app repos are not all at the top');
+
+// One real release per forge, so a renamed asset field gets caught rather than
+// silently degrading every card to the releases page. Two requests, no search quota.
+for (const [host, releaseApi] of [
+  ['GitHub', 'https://api.github.com/repos/WofWca/quake3.xdc/releases/latest'],
+  ['Codeberg', 'https://codeberg.org/api/v1/repos/webxdc/poll/releases/latest'],
+]) {
+  const url = await xdcUrl({ releaseApi }).catch(e => e.message);
+  ok(typeof url === 'string' && url.endsWith('.xdc'), `${host}: no .xdc download resolved (${url})`);
+}
 
 console.log(names.map((n, i) => `${n}: ${results[i].value?.length ?? 'failed'}`).join(', '));
 console.log(`${repos.length} total, ${lastApp + 1} tagged webxdc-app`);

@@ -115,6 +115,7 @@ const SOURCES = {
         topics: r.topics || [],
         icons: iconUrls(`https://raw.githubusercontent.com/${r.full_name}/HEAD`),
         avatar: `${r.owner.avatar_url}&s=80`,
+        releaseApi: `https://api.github.com/repos/${r.full_name}/releases/latest`,
       })), { Accept: 'application/vnd.github+json' });
   },
   Codeberg: t => {
@@ -132,9 +133,24 @@ const SOURCES = {
         topics: r.topics || [],
         icons: iconUrls(`${r.html_url}/raw/branch/${r.default_branch}`),
         avatar: r.owner.avatar_url,
+        releaseApi: `https://codeberg.org/api/v1/repos/${r.full_name}/releases/latest`,
       })));
   },
 };
+
+/**
+ * @throws if there is no release at all, which the caller treats as "no .xdc".
+ */
+async function xdcFileUrl(repo) {
+  const release = await json(repo.releaseApi);
+  const xdcFiles = release.assets?.filter(a => a.name.endsWith('.xdc'))
+  // If there are multiple files, also consider that a failure,
+  // better to fall back to default behavior then.
+  if (xdcFiles.length !== 1) {
+    return null
+  }
+  return xdcFiles[0].browser_download_url ?? null;
+}
 
 /**
  * If a repo doesn't have the `webxdc-app` topic, put it after all others.
@@ -176,6 +192,24 @@ function card(r) {
   const rel = meta.appendChild(document.createElement('a'));
   rel.href = r.url + '/releases/latest';
   rel.textContent = 'latest release';
+  // Look up the .xdc file only when clicked,
+  // so as to not burn the API rate limit.
+  // Ctrl/cmd-click keeps its usual meaning, and the
+  // releases page stays the href until we know better.
+  rel.ariaLive = 'true';
+  rel.onclick = async e => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    rel.textContent = 'finding .xdc…';
+    const xdc = await xdcFileUrl(r).catch(() => null);
+    rel.textContent = 'latest release';
+    if (xdc) {
+      rel.href = xdc; // a second click needs no lookup
+      rel.onclick = null;
+      rel.ariaLive = null;
+    }
+    location.href = rel.href;
+  };
 
   return li;
 }
