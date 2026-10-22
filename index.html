@@ -26,8 +26,42 @@
   .desc { flex: 1; }
   .meta { font-size: .85rem; display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; }
   .meta > :not(.download) { opacity: .7; }
-  .download { margin-left: auto; padding: .2rem .7rem; border-radius: .3rem; text-decoration: none;
-       border: 1px solid color-mix(in srgb, currentColor 40%, transparent); }
+
+  /* Icon only: the text stays, for screen readers, but takes no space. */
+  .download { margin-left: auto; padding: .3rem; border-radius: .3rem; text-decoration: none;
+       border: 1px solid color-mix(in srgb, currentColor 40%, transparent); font-size: 0; }
+  .download[aria-busy=true] { opacity: .5; cursor: progress; }
+  .download[aria-busy=true]::before { content: '⏳'; mask: none; background: none;
+       font-size: 1rem; line-height: 1.1rem; text-align: center; }
+  /* Used as a mask so it takes the text color. A pseudo-element,
+     so the click handler's textContent swaps keep it.
+
+     The icon is "download" from Feather, https://feathericons.com/ :
+
+     The MIT License (MIT)
+
+     Copyright (c) 2013-2023 Cole Bemis
+
+     Permission is hereby granted, free of charge, to any person obtaining a copy
+     of this software and associated documentation files (the "Software"), to deal
+     in the Software without restriction, including without limitation the rights
+     to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+     copies of the Software, and to permit persons to whom the Software is
+     furnished to do so, subject to the following conditions:
+
+     The above copyright notice and this permission notice shall be included in all
+     copies or substantial portions of the Software.
+
+     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+     IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+     FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+     AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+     LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+     SOFTWARE. */
+  .download::before { content: ''; display: block; width: 1.1rem; height: 1.1rem;
+       background: currentColor;
+       mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><polyline points='7 10 12 15 17 10'/><line x1='12' y1='15' x2='12' y2='3'/></svg>") center / contain no-repeat; }
   a { color: inherit; }
 </style>
 </head>
@@ -260,7 +294,7 @@ function card(r) {
   const rel = meta.appendChild(document.createElement('a'));
   rel.className = 'download';
   rel.href = r.xdcFileUrl ?? r.url + '/releases/latest';
-  rel.textContent = 'Download';
+  rel.textContent = rel.title = 'Download';
   if (r.xdcFileUrl) return li;
   // Look up the .xdc file only when clicked,
   // so as to not burn the API rate limit.
@@ -271,8 +305,10 @@ function card(r) {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     rel.textContent = 'finding .xdc…';
+    rel.ariaBusy = 'true';
     const xdc = await xdcFileUrl(r).catch(() => null);
     rel.textContent = 'Download';
+    rel.ariaBusy = null;
     if (xdc) {
       rel.href = xdc; // a second click needs no lookup
       rel.onclick = null;
