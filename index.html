@@ -24,7 +24,10 @@
        background: color-mix(in srgb, currentColor 15%, transparent); }
   .owner { display: block; font-weight: normal; font-size: .85rem; opacity: .7; }
   .desc { flex: 1; }
-  .meta { font-size: .85rem; opacity: .7; display: flex; gap: .75rem; flex-wrap: wrap; }
+  .meta { font-size: .85rem; display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; }
+  .meta > :not(.download) { opacity: .7; }
+  .download { margin-left: auto; padding: .2rem .7rem; border-radius: .3rem; text-decoration: none;
+       border: 1px solid color-mix(in srgb, currentColor 40%, transparent); }
   a { color: inherit; }
 </style>
 </head>
@@ -255,6 +258,7 @@ function card(r) {
   time.lang = relTime.resolvedOptions().locale;
   time.textContent = ago(r.updated);
   const rel = meta.appendChild(document.createElement('a'));
+  rel.className = 'download';
   rel.href = r.xdcFileUrl ?? r.url + '/releases/latest';
   rel.textContent = 'Download';
   if (r.xdcFileUrl) return li;
