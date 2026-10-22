@@ -213,6 +213,15 @@ function rankRepos(repos) {
   return repos.sort((a, b) => isApp(b) - isApp(a) || b.stars - a.stars);
 }
 
+const relTime = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+const UNITS = [['year', 365], ['month', 30], ['week', 7], ['day', 1]];
+/** E.g. "3 months ago", in the largest unit that fits. */
+function ago(date) {
+  const days = (Date.now() - new Date(date)) / 864e5;
+  const [unit, size] = UNITS.find(([, size]) => days >= size) || UNITS.at(-1);
+  return relTime.format(-Math.floor(days / size), unit);
+}
+
 function card(r) {
   const li = document.createElement('li');
 
@@ -240,11 +249,11 @@ function card(r) {
   if (r.stars != null)
     meta.appendChild(document.createElement('span')).textContent = `★ ${r.stars}`;
 
-  const updated = meta.appendChild(document.createElement('span'));
-  updated.append('updated ');
-  const time = updated.appendChild(document.createElement('time'));
+  const time = meta.appendChild(document.createElement('time'));
   time.dateTime = r.updated;
-  time.textContent = r.updated.slice(0, 10);
+  time.title = `updated ${new Date(r.updated).toLocaleDateString()}`;
+  time.lang = relTime.resolvedOptions().locale;
+  time.textContent = ago(r.updated);
   const rel = meta.appendChild(document.createElement('a'));
   rel.href = r.xdcFileUrl ?? r.url + '/releases/latest';
   rel.textContent = 'Download';
