@@ -5,8 +5,8 @@ import { readFile } from 'node:fs/promises';
 const page = await readFile(new URL('index.html', import.meta.url), 'utf8');
 const script = page.match(/<script>([\s\S]*)<\/script>/)[1];
 const adapters = script.slice(script.indexOf('async function json'), script.indexOf('function card('));
-const exports = 'SOURCES, rankRepos, dedupe, pages, firstImageThatLoads, xdcFileUrl';
-const { SOURCES, rankRepos, dedupe, pages, firstImageThatLoads, xdcFileUrl } =
+const exports = 'SOURCES, json, repoKey, rankRepos, dedupe, pages, firstImageThatLoads, xdcFileUrl';
+const { SOURCES, json, repoKey, rankRepos, dedupe, pages, firstImageThatLoads, xdcFileUrl } =
   await import('data:text/javascript,' + encodeURIComponent(`${adapters}export { ${exports} };`));
 
 let failed = 0;
@@ -132,6 +132,13 @@ ok(forgeRepos.every(r => r.icons.length === 2 && r.icons[0].endsWith('/icon.png'
 // and their name has to read like a forge's owner/repo.
 ok(storeRepos.every(r => r.xdcFileUrl.endsWith('.xdc')), 'a store app has no direct .xdc link');
 ok(storeRepos.every(r => /^[^/]+\/[^/]+$/.test(r.name)), 'a store app name is not owner/repo');
+// Stars come from a snapshot keyed by URL, so a key format that drifted from
+// repoKey() would quietly lose all of them. Node can't fetch the page-relative
+// store-stars.json, so read it here and look every store app up the way the page does.
+const snapshot = JSON.parse(await readFile(new URL('store-stars.json', import.meta.url), 'utf8'));
+const unstarred = (await json('https://apps.testrun.org/xdcget-lock.json'))
+  .filter(a => snapshot[repoKey(a.source_code_url)] == null);
+ok(unstarred.length <= 5, `${unstarred.length} store apps not in store-stars.json, run node fetch-store-stars.mjs > store-stars.json`);
 // The store is only offered for its own topic, not for any search.
 ok((await SOURCES['webxdc.org']('webxdc')).length === 0, 'store apps leaked into another topic');
 ok(new Set(repos.map(r => r.host)).size === names.length, 'a forge contributed nothing');

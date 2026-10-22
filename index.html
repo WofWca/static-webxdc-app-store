@@ -144,12 +144,19 @@ const SOURCES = {
   'webxdc.org': async t => {
     if (!t.split(',').includes('webxdc-app')) return [];
     const store = 'https://apps.testrun.org';
-    return (await json(`${store}/xdcget-lock.json`)).map(a => ({
+    const [apps, stars] = await Promise.all([
+      json(`${store}/xdcget-lock.json`),
+      // Snapshotted by fetch-store-stars.mjs, since the list
+      // has no start counts.
+      // Missing (e.g. opened from file://) just means no stars.
+      json('store-stars.json').catch(() => ({})),
+    ]);
+    return apps.map(a => ({
       host: 'webxdc.org',
       name: new URL(a.source_code_url).pathname.replace(/^\/|\/$/g, ''),
       url: a.source_code_url,
       desc: a.description.split('\n')[0],
-      stars: null,
+      stars: stars[repoKey(a.source_code_url)] ?? null,
       updated: a.date,
       // Treat as if it has the tag / topic.
       topics: ['webxdc-app'],
@@ -160,14 +167,17 @@ const SOURCES = {
   },
 };
 
+// Forge URLs for the same repo vary in case and a trailing slash only.
+const repoKey = url => url.toLowerCase().replace(/\/$/, '');
+
 /**
  * Drop repos already listed by an earlier source, so a store app whose repo is
- * also tagged shows up once, with its stars. Forge URLs vary in case only.
+ * also tagged shows up once, with its live stars.
  */
 function dedupe(repos) {
   const seen = new Set();
   return repos.filter(r => {
-    const key = r.url.toLowerCase().replace(/\/$/, '');
+    const key = repoKey(r.url);
     return !seen.has(key) && seen.add(key);
   });
 }
