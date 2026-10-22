@@ -39,6 +39,9 @@
   or <a href="https://codeberg.org/">Codeberg</a>
   and add the <code>webxdc-app</code> tag (topic) to it,
   then make a release with a file named <code>app.xdc</code>. Done!
+  <br>
+  Apps from the <a href="https://webxdc.org/apps/">webxdc.org app store</a>
+  are listed too.
 </p>
 <a href="https://github.com/WofWca/static-webxdc-app-store">Source Code</a>
 
@@ -136,7 +139,38 @@ const SOURCES = {
         releaseApi: `https://codeberg.org/api/v1/repos/${r.full_name}/releases/latest`,
       })));
   },
+  // From https://webxdc.org/apps/, to include the repos that don't have
+  // the `webxdc-app` repo tag.
+  'webxdc.org': async t => {
+    if (!t.split(',').includes('webxdc-app')) return [];
+    const store = 'https://apps.testrun.org';
+    return (await json(`${store}/xdcget-lock.json`)).map(a => ({
+      host: 'webxdc.org',
+      name: new URL(a.source_code_url).pathname.replace(/^\/|\/$/g, ''),
+      url: a.source_code_url,
+      desc: a.description.split('\n')[0],
+      stars: null,
+      updated: a.date,
+      // Treat as if it has the tag / topic.
+      topics: ['webxdc-app'],
+      icons: [`${store}/${a.icon_relname}`],
+      avatar: null,
+      xdcFileUrl: a.url,
+    }));
+  },
 };
+
+/**
+ * Drop repos already listed by an earlier source, so a store app whose repo is
+ * also tagged shows up once, with its stars. Forge URLs vary in case only.
+ */
+function dedupe(repos) {
+  const seen = new Set();
+  return repos.filter(r => {
+    const key = r.url.toLowerCase().replace(/\/$/, '');
+    return !seen.has(key) && seen.add(key);
+  });
+}
 
 /**
  * @throws if there is no release at all, which the caller treats as "no .xdc".
@@ -173,7 +207,7 @@ function card(r) {
   const img = a.appendChild(document.createElement('img'));
   img.loading = 'lazy';
   img.alt = '';
-  firstImageThatLoads(img, [...r.icons, r.avatar]);
+  firstImageThatLoads(img, [...r.icons, r.avatar].filter(Boolean));
 
   a.appendChild(document.createElement('span')).textContent = r.name;
 
@@ -182,7 +216,8 @@ function card(r) {
 
   const meta = li.appendChild(document.createElement('div'));
   meta.className = 'meta';
-  meta.appendChild(document.createElement('span')).textContent = `★ ${r.stars}`;
+  if (r.stars != null)
+    meta.appendChild(document.createElement('span')).textContent = `★ ${r.stars}`;
 
   const updated = meta.appendChild(document.createElement('span'));
   updated.append('updated ');
@@ -190,8 +225,9 @@ function card(r) {
   time.dateTime = r.updated;
   time.textContent = r.updated.slice(0, 10);
   const rel = meta.appendChild(document.createElement('a'));
-  rel.href = r.url + '/releases/latest';
+  rel.href = r.xdcFileUrl ?? r.url + '/releases/latest';
   rel.textContent = 'Download';
+  if (r.xdcFileUrl) return li;
   // Look up the .xdc file only when clicked,
   // so as to not burn the API rate limit.
   // Ctrl/cmd-click keeps its usual meaning, and the
@@ -223,9 +259,9 @@ async function load() {
   try {
     const names = Object.keys(SOURCES);
     const results = await Promise.allSettled(names.map(n => SOURCES[n](t)));
+    // Dedupe before hiding, so a hidden repo's store entry goes with it.
     const repos = rankRepos(
-      results
-        .flatMap(r => r.value || [])
+      dedupe(results.flatMap(r => r.value || []))
         .filter(r => !r.topics.includes('webxdc-app-hidden-from-stores'))
     );
     // One dead forge still shows the other's results, and a forge that rate-limited
@@ -233,7 +269,7 @@ async function load() {
     const counts = results.map((r, i) => r.status === 'rejected'
       ? `${names[i]}: failed (${r.reason.message})`
       : `${names[i]}: ${r.value.length}${r.value.error ? ` so far (${r.value.error.message})` : ''}`);
-    $('status').textContent = `${repos.length} repos tagged "${t}" — ${counts.join(', ')}`;
+    $('status').textContent = `${repos.length} repos for "${t}" — ${counts.join(', ')}`;
     $('list').append(...repos.map(card));
   } catch (e) {
     $('status').textContent = `error: ${e.message}`;

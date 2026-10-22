@@ -5,8 +5,8 @@ import { readFile } from 'node:fs/promises';
 const page = await readFile(new URL('index.html', import.meta.url), 'utf8');
 const script = page.match(/<script>([\s\S]*)<\/script>/)[1];
 const adapters = script.slice(script.indexOf('async function json'), script.indexOf('function card('));
-const exports = 'SOURCES, rankRepos, pages, firstImageThatLoads, xdcFileUrl';
-const { SOURCES, rankRepos, pages, firstImageThatLoads, xdcFileUrl } =
+const exports = 'SOURCES, rankRepos, dedupe, pages, firstImageThatLoads, xdcFileUrl';
+const { SOURCES, rankRepos, dedupe, pages, firstImageThatLoads, xdcFileUrl } =
   await import('data:text/javascript,' + encodeURIComponent(`${adapters}export { ${exports} };`));
 
 let failed = 0;
@@ -26,6 +26,15 @@ const ranked = rankRepos([
 ]);
 ok(ranked.map(r => r.name).join() === 'more-stars-app,few-stars-app,many-stars-plain,no-topics',
   'wrong ranking: ' + ranked.map(r => r.name).join());
+
+// The first source to list a repo wins, so a tagged repo keeps its stars over its
+// store entry, even when the two spell the URL in different case.
+const deduped = dedupe([
+  { url: 'https://github.com/a/Calc', stars: 3 },
+  { url: 'https://github.com/b/other', stars: 1 },
+  { url: 'https://github.com/a/calc/', stars: null },
+]);
+ok(deduped.map(r => r.stars).join() === '3,1', `wrong dedupe: ${deduped.map(r => r.url)}`);
 
 // A repo may ship icon.png or icon.jpg, or neither. Walk the whole chain on a fake
 // img: every candidate gets tried in order, and the final failure must clear the
@@ -101,19 +110,30 @@ globalThis.fetch = realFetch;
 
 const names = Object.keys(SOURCES);
 const results = await Promise.allSettled(names.map(n => SOURCES[n]('webxdc-app,webxdc')));
-const repos = rankRepos(results.flatMap(r => r.value || []));
+const repos = rankRepos(dedupe(results.flatMap(r => r.value || [])));
+const forgeRepos = repos.filter(r => r.host !== 'webxdc.org');
+const storeRepos = repos.filter(r => r.host === 'webxdc.org');
 
 for (const [i, r] of results.entries())
   ok(r.status === 'fulfilled' && r.value.length > 0, `${names[i]}: ${r.reason?.message ?? 'no repos'}`);
 // Both forges read a comma-separated topic list as OR: a repo tagged only with the
 // first topic must still come back, or coverage silently shrinks to one topic.
-ok(repos.some(r => r.topics.includes('webxdc-app') && !r.topics.includes('webxdc')),
+ok(forgeRepos.some(r => r.topics.includes('webxdc-app') && !r.topics.includes('webxdc')),
   'comma topic list is not being treated as OR');
 for (const r of repos)
-  for (const k of ['host', 'name', 'url', 'stars', 'updated', 'icons', 'avatar', 'topics'])
+  for (const k of ['host', 'name', 'url', 'updated', 'icons', 'topics'])
     ok(r[k] != null, `${r.host} ${r.name}: ${k} missing`);
-ok(repos.every(r => r.icons.length === 2 && r.icons[0].endsWith('/icon.png')
+for (const r of forgeRepos)
+  for (const k of ['stars', 'avatar'])
+    ok(r[k] != null, `${r.host} ${r.name}: ${k} missing`);
+ok(forgeRepos.every(r => r.icons.length === 2 && r.icons[0].endsWith('/icon.png')
   && r.icons[1].endsWith('/icon.jpg')), 'both spec icon formats should be offered');
+// Store entries skip the release lookup, so their link has to be the file itself,
+// and their name has to read like a forge's owner/repo.
+ok(storeRepos.every(r => r.xdcFileUrl.endsWith('.xdc')), 'a store app has no direct .xdc link');
+ok(storeRepos.every(r => /^[^/]+\/[^/]+$/.test(r.name)), 'a store app name is not owner/repo');
+// The store is only offered for its own topic, not for any search.
+ok((await SOURCES['webxdc.org']('webxdc')).length === 0, 'store apps leaked into another topic');
 ok(new Set(repos.map(r => r.host)).size === names.length, 'a forge contributed nothing');
 ok(repos.every(r => /^\d{4}-\d{2}-\d{2}$/.test(r.updated.slice(0, 10))), 'unexpected date format');
 // r.updated goes straight into <time datetime>, so it has to be a real timestamp.
