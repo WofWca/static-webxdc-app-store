@@ -5,8 +5,8 @@ import { readFile } from 'node:fs/promises';
 const page = await readFile(new URL('index.html', import.meta.url), 'utf8');
 const script = page.match(/<script>([\s\S]*)<\/script>/)[1];
 const adapters = script.slice(script.indexOf('async function json'), script.indexOf('function card('));
-const exports = 'SOURCES, rankRepos, pages, firstImageThatLoads, xdcUrl';
-const { SOURCES, rankRepos, pages, firstImageThatLoads, xdcUrl } =
+const exports = 'SOURCES, rankRepos, pages, firstImageThatLoads, xdcFileUrl';
+const { SOURCES, rankRepos, pages, firstImageThatLoads, xdcFileUrl } =
   await import('data:text/javascript,' + encodeURIComponent(`${adapters}export { ${exports} };`));
 
 let failed = 0;
@@ -46,13 +46,13 @@ globalThis.fetch = async () => ({
     { name: 'my-game.xdc', browser_download_url: 'https://forge.test/my-game.xdc' },
   ] }),
 });
-ok(await xdcUrl({}) === 'https://forge.test/my-game.xdc', 'did not pick the .xdc out of the assets');
+ok(await xdcFileUrl({}) === 'https://forge.test/my-game.xdc', 'did not pick the .xdc out of the assets');
 
 globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ assets: [] }) });
-ok(await xdcUrl({}) === null, 'a release with no .xdc should resolve to null, not undefined');
+ok(await xdcFileUrl({}) === null, 'a release with no .xdc should resolve to null, not undefined');
 
 globalThis.fetch = async () => ({ ok: false, status: 404, json: async () => ({ message: 'Not Found' }) });
-ok(await xdcUrl({}).catch(() => 'threw') === 'threw', 'a repo with no releases should reject');
+ok(await xdcFileUrl({}).catch(() => 'threw') === 'threw', 'a repo with no releases should reject');
 globalThis.fetch = realFetch;
 
 // Both forges currently fit one page, so force a page boundary with a tiny limit and
@@ -129,7 +129,7 @@ for (const [host, releaseApi] of [
   ['GitHub', 'https://api.github.com/repos/WofWca/quake3.xdc/releases/latest'],
   ['Codeberg', 'https://codeberg.org/api/v1/repos/webxdc/poll/releases/latest'],
 ]) {
-  const url = await xdcUrl({ releaseApi }).catch(e => e.message);
+  const url = await xdcFileUrl({ releaseApi }).catch(e => e.message);
   ok(typeof url === 'string' && url.endsWith('.xdc'), `${host}: no .xdc download resolved (${url})`);
 }
 
