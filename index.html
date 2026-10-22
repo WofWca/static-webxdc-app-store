@@ -17,6 +17,7 @@
        text-decoration: none; overflow-wrap: anywhere; }
   .name img { width: 2.5rem; height: 2.5rem; border-radius: .3rem; flex: none;
        background: color-mix(in srgb, currentColor 15%, transparent); }
+  .owner { display: block; font-weight: normal; font-size: .85rem; opacity: .7; }
   .desc { flex: 1; }
   .meta { font-size: .85rem; opacity: .7; display: flex; gap: .75rem; flex-wrap: wrap; }
   a { color: inherit; }
@@ -219,7 +220,12 @@ function card(r) {
   img.alt = '';
   firstImageThatLoads(img, [...r.icons, r.avatar].filter(Boolean));
 
-  a.appendChild(document.createElement('span')).textContent = r.name;
+  // The repo name is what tells apps apart; the owner is secondary.
+  const slash = r.name.lastIndexOf('/');
+  const title = a.appendChild(document.createElement('span'));
+  title.textContent = r.name.slice(slash + 1);
+  title.appendChild(document.createElement('span')).textContent = r.name.slice(0, slash);
+  title.lastChild.className = 'owner';
 
   li.appendChild(document.createElement('div')).textContent = r.desc || '';
   li.lastChild.className = 'desc';
