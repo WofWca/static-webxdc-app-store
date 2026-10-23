@@ -140,7 +140,19 @@ async function pages(url, size, parse, headers) {
 }
 
 // The webxdc spec allows the icon to be either icon.png or icon.jpg.
-const iconUrls = base => [`${base}/icon.png`, `${base}/icon.jpg`];
+const iconUrls = base => [
+  `${base}/icon.png`,
+  `${base}/icon.jpg`,
+  // In case it's a repo with a build process (bundler),
+  // we are likely to find the icons here.
+  //
+  // Let's not add all possible paths though,
+  // so as to not spam the forge servers.
+  `${base}/public/icon.png`,
+  `${base}/public/icon.jpg`,
+  `${base}/assets/icon.png`,
+  `${base}/assets/icon.jpg`,
+];
 
 /**
  * Show the first image that loads, walking `srcs` on each failure. The last
