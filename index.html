@@ -211,8 +211,7 @@ const SOURCES = {
       desc: a.description.split('\n')[0],
       stars: stars[repoKey(a.source_code_url)] ?? null,
       updated: a.date,
-      // Treat as if it has the tag / topic.
-      topics: ['webxdc-app'],
+      topics: [],
       icons: [`${store}/${a.icon_relname}`],
       avatar: null,
       xdcFileUrl: a.url,
@@ -250,13 +249,24 @@ async function xdcFileUrl(repo) {
 }
 
 /**
- * If a repo doesn't have the `webxdc-app` topic, put it after all others.
+ * If a repo doesn't have the `webxdc-app` topic
+ * and is not listed on webxdc.org, put it after all others.
  *
  * If a repo doesn't have the `webxdc-app` topic but, say, only has `webxdc`,
  * then it might be a WebXDC development tool or something related to that.
  */
-function rankRepos(repos) {
-  const isApp = r => r.topics.includes('webxdc-app');
+function rankRepos(repos, undedupedRepos) {
+  const webxdcOrgApps = new Set(
+    undedupedRepos
+      .filter(r => r.host === 'webxdc.org')
+      .map(r => repoKey(r.url))
+  );
+  const isApp = r =>
+    r.topics.includes('webxdc-app') ||
+    // If it's in the store then it's definitely an app.
+    r.host === 'webxdc.org' ||
+    // Or if this is an e.g. GitHub repo that also has a duplicate store entry.
+    webxdcOrgApps.has(repoKey(r.url));
   return repos.sort((a, b) => isApp(b) - isApp(a) || b.stars - a.stars);
 }
 
@@ -339,10 +349,12 @@ async function load() {
   try {
     const names = Object.keys(SOURCES);
     const results = await Promise.allSettled(names.map(n => SOURCES[n](t)));
-    // Dedupe before hiding, so a hidden repo's store entry goes with it.
+    const undedupedRepos = results.flatMap(r => r.value || []);
     const repos = rankRepos(
-      dedupe(results.flatMap(r => r.value || []))
-        .filter(r => !r.topics.includes('webxdc-app-hidden-from-stores'))
+      // Dedupe before hiding, so a hidden repo's store entry goes with it.
+      dedupe(undedupedRepos)
+        .filter(r => !r.topics.includes('webxdc-app-hidden-from-stores')),
+      undedupedRepos
     );
     // One dead forge still shows the other's results, and a forge that rate-limited
     // part-way still shows the pages it did give us.
