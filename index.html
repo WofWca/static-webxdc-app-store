@@ -352,16 +352,25 @@ function card(r) {
   return li;
 }
 
+// Bumped on each load, so a slow source of a previous topic can't overwrite the list.
+let loadId = 0;
+
 async function load() {
   const t = topic();
+  const id = ++loadId;
   $('q').value = t;
   document.title = `WebXDC Apps: ${t}`;
   $('status').textContent = 'loading…';
   $('list').replaceChildren();
-  try {
-    const names = Object.keys(SOURCES);
-    const results = await Promise.allSettled(names.map(n => SOURCES[n](t)));
-    const undedupedRepos = results.flatMap(r => r.value || []);
+  const names = Object.keys(SOURCES);
+  // In `names` order, so that dedupe prefers the same source whatever the arrival order.
+  // `undefined` means "still loading".
+  const results = names.map(() => undefined);
+
+  // Re-render with whatever has arrived so far.
+  const render = () => {
+    const pending = results.filter(r => !r).length;
+    const undedupedRepos = results.flatMap(r => r?.value || []);
     const repos = rankRepos(
       // Dedupe before hiding, so a hidden repo's store entry goes with it.
       dedupe(undedupedRepos)
@@ -370,13 +379,24 @@ async function load() {
     );
     // One dead forge still shows the other's results, and a forge that rate-limited
     // part-way still shows the pages it did give us.
-    const counts = results.map((r, i) => r.status === 'rejected'
-      ? `${names[i]}: failed (${r.reason.message})`
+    const counts = results.map((r, i) =>
+      !r ? `${names[i]}: ⏳ loading…`
+      : r.status === 'rejected' ? `${names[i]}: failed (${r.reason.message})`
       : `${names[i]}: ${r.value.length}${r.value.error ? ` so far (${r.value.error.message})` : ''}`);
-    $('status').textContent = `${repos.length} repos for "${t}" — ${counts.join(', ')}`;
-    $('list').append(...repos.map(card));
+    $('status').textContent =
+      `${repos.length} repos for "${t}" — ${counts.join(', ')}${pending ? ' — loading…' : ''}`;
+    $('list').replaceChildren(...repos.map(card));
+  };
+
+  try {
+    await Promise.all(names.map(async (n, i) => {
+      // A synchronous throw from a source is a failure of that source too.
+      results[i] = await Promise.resolve().then(() => SOURCES[n](t))
+        .then(value => ({ status: 'fulfilled', value }), reason => ({ status: 'rejected', reason }));
+      if (id === loadId) render();
+    }));
   } catch (e) {
-    $('status').textContent = `error: ${e.message}`;
+    if (id === loadId) $('status').textContent = `error: ${e.message}`;
   }
 }
 load();
